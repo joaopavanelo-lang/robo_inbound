@@ -210,14 +210,6 @@ def main():
         df_pen[col_to] = pd.to_numeric(df_pen[col_to], errors='coerce').fillna(0).astype(int)
         df_pen[col_data] = pd.to_datetime(df_pen[col_data], dayfirst=True, errors='coerce')
         
-        # --- DEBUG: Verificando a leitura do Pandas ---
-        print(f"\n--- DEBUG PARTE 3 ---")
-        print(f"Total de linhas lidas: {len(df_pen)}")
-        print(f"Coluna de Data: '{col_data}'")
-        print(f"Coluna de Saída: '{col_saida}'")
-        print(f"Linhas com data válida: {df_pen[col_data].notna().sum()}")
-        # ---------------------------------------------
-        
         # Ampliamos a lista para ignorar fórmulas zeradas, erros de procv, etc.
         valores_vazios = ['nan', 'none', '', '-', '--', '0', '#n/a', '#ref!', '#value!']
         
@@ -285,7 +277,8 @@ def main():
         bloco_resumo.append(f"{titulos[cat]}: {total_lts} LTs ({total_pct} pcts | {total_tos} TO)")
         for t in sorted(resumo[cat].keys()):
             r = resumo[cat][t]
-            bloco_resumo.append(f"    - {t}: {r['lts']} LTs ({r['pacotes']} pcts | {r['tos']} TO)")
+            # Formatação ajustada para 2 espaços antes do hífen
+            bloco_resumo.append(f"  - {t}: {r['lts']} LTs ({r['pacotes']} pcts | {r['tos']} TO)")
         bloco_resumo.append("") 
 
     txt_completo = "\n".join(bloco_patio) + "\n" + ("-" * 72) + "\n\n" + "\n".join(bloco_resumo)
