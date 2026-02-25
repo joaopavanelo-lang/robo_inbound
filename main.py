@@ -51,10 +51,12 @@ def padronizar_doca(doca_str):
     match = re.search(r'(\d+)$', str(doca_str))
     return match.group(1) if match else "--"
 
-def ler_aba_com_retry(planilha, nome_aba, range_celulas):
+# Função otimizada para ler toda a área preenchida dinamicamente
+def ler_aba_com_retry(planilha, nome_aba):
     for tentativa in range(3):
         try:
-            dados = planilha.worksheet(nome_aba).get(range_celulas)
+            # get_all_values() traz apenas a área preenchida, sem precisar de range fixo
+            dados = planilha.worksheet(nome_aba).get_all_values() 
             if len(dados) > 1:
                 return dados
             else:
@@ -89,7 +91,7 @@ def main():
     lts_processados_no_report = set()
 
     # --- PARTE 1: Processar o PÁTIO (Aba 'Report') ---
-    raw_report = ler_aba_com_retry(planilha, 'Report', 'A1:L8000')
+    raw_report = ler_aba_com_retry(planilha, 'Report')
     if raw_report:
         colunas = [str(h).strip() for h in raw_report[0]]
         df_rep = pd.DataFrame(raw_report[1:], columns=colunas)
@@ -146,7 +148,7 @@ def main():
                     em_fila.append((minutos, linha))
 
     # --- PARTE 2: Processar 'Deu chegada' ---
-    raw_chegada_manual = ler_aba_com_retry(planilha, 'Deu chegada', 'A1:F1000')
+    raw_chegada_manual = ler_aba_com_retry(planilha, 'Deu chegada')
     if raw_chegada_manual:
         cols_manual = [str(h).strip() for h in raw_chegada_manual[0]]
         df_manual = pd.DataFrame(raw_chegada_manual[1:], columns=cols_manual)
@@ -179,8 +181,7 @@ def main():
                     em_chegada.append((minutos, linha))
 
     # --- PARTE 3: Processar o RESUMO (Aba 'Pendente') ---
-    # AJUSTE: Mudei o nome da aba e o range de colunas para garantir que ele leia tudo, até onde o Cutoff estiver
-    raw_pendente = ler_aba_com_retry(planilha, 'Pendente', 'A1:AC8000') 
+    raw_pendente = ler_aba_com_retry(planilha, 'Pendente') 
     resumo = {'atrasado': {}, 'hoje': {}, 'amanha': {}}
     
     # Define a data operacional baseada no corte de 06:00
@@ -203,25 +204,36 @@ def main():
         col_saida = next((c for c in df_pen.columns if 'descarregado' in c.lower()), None)
         col_pacotes = next((c for c in df_pen.columns if 'acote' in c.lower()), 'Pacotes')
         col_to = next((c for c in df_pen.columns if c.upper() == 'TO'), 'TO')
-        # Tenta buscar por 'cutoff', se não achar, busca por 'data'
         col_data = next((c for c in df_pen.columns if 'cutoff' in c.lower() or 'data' in c.lower() and 'descarregado' not in c.lower()), 'Data')
         
         df_pen[col_pacotes] = pd.to_numeric(df_pen[col_pacotes], errors='coerce').fillna(0).astype(int)
         df_pen[col_to] = pd.to_numeric(df_pen[col_to], errors='coerce').fillna(0).astype(int)
         df_pen[col_data] = pd.to_datetime(df_pen[col_data], dayfirst=True, errors='coerce')
         
+        # --- DEBUG: Verificando a leitura do Pandas ---
+        print(f"\n--- DEBUG PARTE 3 ---")
+        print(f"Total de linhas lidas: {len(df_pen)}")
+        print(f"Coluna de Data: '{col_data}'")
+        print(f"Coluna de Saída: '{col_saida}'")
+        print(f"Linhas com data válida: {df_pen[col_data].notna().sum()}")
+        # ---------------------------------------------
+        
+        # Ampliamos a lista para ignorar fórmulas zeradas, erros de procv, etc.
+        valores_vazios = ['nan', 'none', '', '-', '--', '0', '#n/a', '#ref!', '#value!']
+        
         for _, row in df_pen.iterrows():
             if pd.isna(row[col_data]): continue 
             
             if col_saida:
-                val_saida = str(row.get(col_saida, '')).strip()
-                if val_saida and val_saida.lower() not in ['nan', 'none', '', '-', '--']: continue 
+                val_saida = str(row.get(col_saida, '')).strip().lower()
+                # Se não for um "falso-vazio", significa que já descarregou. Pula.
+                if val_saida and val_saida not in valores_vazios: 
+                    continue 
 
             t = str(row.get('Turno', 'Indef')).strip().upper()
             pct = row[col_pacotes]
             val_to_row = row[col_to]
             
-            # --- O GRANDE AJUSTE ESTÁ AQUI ---
             # Subtraímos 6 horas do timestamp para que as viagens de madrugada 
             # (até as 05:59) recaiam no dia operacional em que o turno começou.
             data_viagem = row[col_data]
