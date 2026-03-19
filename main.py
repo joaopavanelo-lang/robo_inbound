@@ -206,6 +206,9 @@ def main():
         col_to = next((c for c in df_pen.columns if c.upper() == 'TO'), 'TO')
         col_data = next((c for c in df_pen.columns if 'cutoff' in c.lower() or 'data' in c.lower() and 'descarregado' not in c.lower()), 'Data')
         
+        # Identificando a coluna da LT na aba Pendente
+        col_lt_pen = next((c for c in df_pen.columns if c.upper() in ['LT', 'TRIP', 'LH TRIP NNUMBER', 'LH TRIP NUMBER']), 'LT')
+        
         df_pen[col_pacotes] = pd.to_numeric(df_pen[col_pacotes], errors='coerce').fillna(0).astype(int)
         df_pen[col_to] = pd.to_numeric(df_pen[col_to], errors='coerce').fillna(0).astype(int)
         df_pen[col_data] = pd.to_datetime(df_pen[col_data], dayfirst=True, errors='coerce')
@@ -225,6 +228,7 @@ def main():
             t = str(row.get('Turno', 'Indef')).strip().upper()
             pct = row[col_pacotes]
             val_to_row = row[col_to]
+            lt_val_pen = str(row.get(col_lt_pen, '???')).strip() # Pegando o nome da LT
             
             # Subtraímos 6 horas do timestamp para que as viagens de madrugada 
             # (até as 05:59) recaiam no dia operacional em que o turno começou.
@@ -243,10 +247,16 @@ def main():
             if categoria == 'atrasado' and pct == 0: categoria = None
             
             if categoria:
-                if t not in resumo[categoria]: resumo[categoria][t] = {'lts': 0, 'pacotes': 0, 'tos': 0}
+                if t not in resumo[categoria]: 
+                    resumo[categoria][t] = {'lts': 0, 'pacotes': 0, 'tos': 0, 'lista_lts': []}
+                
                 resumo[categoria][t]['lts'] += 1
                 resumo[categoria][t]['pacotes'] += pct
                 resumo[categoria][t]['tos'] += val_to_row
+                
+                # Salvando o nome da LT apenas se estiver atrasado
+                if categoria == 'atrasado' and lt_val_pen and lt_val_pen != '???':
+                    resumo[categoria][t]['lista_lts'].append(lt_val_pen)
 
     # --- MONTAGEM E ENVIO ---
     for lista in [em_descarregando, em_doca, em_fila, em_chegada]:
@@ -268,17 +278,29 @@ def main():
         bloco_patio.extend([x[1] for x in em_chegada])
 
     bloco_resumo = []
-    titulos = {'atrasado': '⚠️ Atrasados', 'hoje': '📅 Hoje', 'amanha': f'🌅 Amanhã {op_date_amanha.strftime("%d/%m")}'}
+    titulos = {
+        'atrasado': '⚠️ Atrasados', 
+        'hoje': '📅 Pendentes de Chegada', 
+        'amanha': f'🌅 Programados amanhã {op_date_amanha.strftime("%d/%m")}'
+    }
+    
     for cat in ['atrasado', 'hoje', 'amanha']:
         if not resumo[cat]: continue
         total_lts = sum(d['lts'] for d in resumo[cat].values())
         total_pct = sum(d['pacotes'] for d in resumo[cat].values())
         total_tos = sum(d['tos'] for d in resumo[cat].values())
+        
         bloco_resumo.append(f"{titulos[cat]}: {total_lts} LTs ({total_pct} pcts | {total_tos} TO)")
         for t in sorted(resumo[cat].keys()):
             r = resumo[cat][t]
             # Formatação ajustada para 2 espaços antes do hífen
             bloco_resumo.append(f"  - {t}: {r['lts']} LTs ({r['pacotes']} pcts | {r['tos']} TO)")
+            
+            # Se for atrasado, exibe os LTs na linha de baixo
+            if cat == 'atrasado' and r.get('lista_lts'):
+                lts_str = ", ".join(r['lista_lts'])
+                bloco_resumo.append(f"    ↳ LTs: {lts_str}")
+                
         bloco_resumo.append("") 
 
     txt_completo = "\n".join(bloco_patio) + "\n" + ("-" * 72) + "\n\n" + "\n".join(bloco_resumo)
