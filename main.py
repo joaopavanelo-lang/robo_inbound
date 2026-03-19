@@ -291,8 +291,16 @@ def main():
         total_tos = sum(d['tos'] for d in resumo[cat].values())
         
         bloco_resumo.append(f"{titulos[cat]}: {total_lts} LTs ({total_pct} pcts | {total_tos} TO)")
-        for t in sorted(resumo[cat].keys()):
+        
+        # Salvamos os turnos em uma lista com índice para poder verificar se é o primeiro
+        turnos = sorted(resumo[cat].keys())
+        for i, t in enumerate(turnos):
             r = resumo[cat][t]
+            
+            # Adiciona uma linha em branco antes do turno se for atrasado e não for o primeiro da lista
+            if cat == 'atrasado' and i > 0:
+                bloco_resumo.append("")
+                
             # Formatação ajustada para 2 espaços antes do hífen
             bloco_resumo.append(f"  - {t}: {r['lts']} LTs ({r['pacotes']} pcts | {r['tos']} TO)")
             
